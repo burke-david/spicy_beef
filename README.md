@@ -24,6 +24,8 @@ Include the following features:
 * CI Scripts / Github workflow integration
 * Unit Testing (ceedling)
 
+## Stretch Goals
+* Integrate file system library and add ability to read/write files from the uSD card on the LCD board.
 
 ## References
 
