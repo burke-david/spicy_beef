@@ -33,4 +33,4 @@ Include the following features:
 * [NUCLEO-U575I-Q Schematic](https://www.st.com/resource/en/schematic_pack/mb1549-u575ziq-c03_schematic.pdf)
 * [STM32U5 Nucleo-144 board User Manual](https://www.st.com/resource/en/datasheet/stm32u575ag.pdf)
 * [Adafruit 1.3" and 1.54" 240x240 Wide Angle TFT LCD Displays Pinouts](https://learn.adafruit.com/adafruit-1-3-and-1-54-240-x-240-wide-angle-tft-lcd-displays/pinouts)
-* 
+* Excellent [tutorial](https://github.com/MaJerle/stm32-cube-cmake-vscode) configuring an STM32CubeMx-generated project to run on VS Code, use CMake, and GDB
