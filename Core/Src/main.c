@@ -22,7 +22,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include <stdbool.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -78,6 +78,8 @@ int main(void)
 
   /* USER CODE BEGIN 1 */
 
+  bool delay_toggle = false;
+
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -105,6 +107,8 @@ int main(void)
   MX_FileX_Init();
   /* USER CODE BEGIN 2 */
 
+
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -114,6 +118,17 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+
+    if ((HAL_GetTick() % 500 == 0) && !delay_toggle){
+      // Toggle the red led
+      HAL_GPIO_TogglePin(led_grn_GPIO_Port, led_grn_Pin);
+      HAL_GPIO_TogglePin(led_blu_GPIO_Port, led_blu_Pin);
+      HAL_GPIO_TogglePin(led_red_GPIO_Port, led_red_Pin);
+      delay_toggle = true;
+    }
+    else if (HAL_GetTick() % 500 != 0){
+      delay_toggle = false;
+    }
   }
   /* USER CODE END 3 */
 }
@@ -383,6 +398,10 @@ static void MX_GPIO_Init(void)
 {
   GPIO_InitTypeDef GPIO_InitStruct = {0};
 /* USER CODE BEGIN MX_GPIO_Init_1 */
+
+  /* In order to use PORTG, have to enable VddIO2 */
+  HAL_PWREx_EnableVddIO2();
+
 /* USER CODE END MX_GPIO_Init_1 */
 
   /* GPIO Ports Clock Enable */
