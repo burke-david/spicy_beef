@@ -1,0 +1,3 @@
+/Users/davidburke/_code/spicy_beef/build/Debug/CMakeFiles/spicy_beef.dir
+/Users/davidburke/_code/spicy_beef/build/Debug/CMakeFiles/edit_cache.dir
+/Users/davidburke/_code/spicy_beef/build/Debug/CMakeFiles/rebuild_cache.dir
