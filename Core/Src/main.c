@@ -23,6 +23,9 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <stdbool.h>
+#include "../../Middlewares/Third_Party/lvgl/lvgl.h"
+#include "../../Middlewares/Third_Party/lvgl/src/drivers/display/st7789/lv_st7789.h"
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -32,7 +35,9 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#define LCD_H_RES	240
+#define LCD_V_RES	240
+#define BUS_SPI1_POLL_TIMEOUT 0x1000U
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -43,6 +48,9 @@
 /* Private variables ---------------------------------------------------------*/
 
 SPI_HandleTypeDef hspi1;
+DMA_NodeTypeDef Node_GPDMA1_Channel0;
+DMA_QListTypeDef List_GPDMA1_Channel0;
+DMA_HandleTypeDef handle_GPDMA1_Channel0;
 
 TIM_HandleTypeDef htim4;
 
@@ -51,16 +59,27 @@ UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
 
+lv_display_t *lcd_disp;
+volatile int lcd_bus_busy = 0;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
-static void MX_SPI1_Init(void);
+static void MX_GPDMA1_Init(void);
 static void MX_TIM4_Init(void);
 static void MX_USART1_UART_Init(void);
+static void MX_SPI1_Init(void);
 static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
+
+void ui_init(lv_display_t *disp);
+static void LVGL_Init(void);
+static void LVGL_Task(void);
+
+static void DMA_TransferComplete(DMA_HandleTypeDef *han);
+static void DMA_TransferError(DMA_HandleTypeDef *han);
 
 /* USER CODE END PFP */
 
@@ -78,7 +97,8 @@ int main(void)
 
   /* USER CODE BEGIN 1 */
 
-  bool delay_toggle = false;
+  bool task_complete_500ms = false;
+  bool task_complete_10ms = false;
 
   /* USER CODE END 1 */
 
@@ -100,14 +120,15 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
-  MX_SPI1_Init();
+  MX_GPDMA1_Init();
   MX_TIM4_Init();
   MX_USART1_UART_Init();
-  MX_USART2_UART_Init();
+  MX_SPI1_Init();
   MX_FileX_Init();
+  MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
 
-
+  LVGL_Init();
 
   /* USER CODE END 2 */
 
@@ -119,15 +140,26 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 
-    if ((HAL_GetTick() % 500 == 0) && !delay_toggle){
+    /* 10ms TASKS */
+    if ((HAL_GetTick() % 10 == 0) && !task_complete_10ms){
+      // Do the tasks
+      task_complete_10ms = true;
+      LVGL_Task();
+    }
+    else if (HAL_GetTick() % 10 != 0){
+      task_complete_10ms = false;
+    }
+
+    /* 500ms TASKS */
+    if ((HAL_GetTick() % 500 == 0) && !task_complete_500ms){
       // Toggle the red led
       HAL_GPIO_TogglePin(led_grn_GPIO_Port, led_grn_Pin);
       HAL_GPIO_TogglePin(led_blu_GPIO_Port, led_blu_Pin);
       HAL_GPIO_TogglePin(led_red_GPIO_Port, led_red_Pin);
-      delay_toggle = true;
+      task_complete_500ms = true;
     }
     else if (HAL_GetTick() % 500 != 0){
-      delay_toggle = false;
+      task_complete_500ms = false;
     }
   }
   /* USER CODE END 3 */
@@ -188,6 +220,34 @@ void SystemClock_Config(void)
 }
 
 /**
+  * @brief GPDMA1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_GPDMA1_Init(void)
+{
+
+  /* USER CODE BEGIN GPDMA1_Init 0 */
+
+  /* USER CODE END GPDMA1_Init 0 */
+
+  /* Peripheral clock enable */
+  __HAL_RCC_GPDMA1_CLK_ENABLE();
+
+  /* GPDMA1 interrupt Init */
+    HAL_NVIC_SetPriority(GPDMA1_Channel0_IRQn, 0, 0);
+    HAL_NVIC_EnableIRQ(GPDMA1_Channel0_IRQn);
+
+  /* USER CODE BEGIN GPDMA1_Init 1 */
+
+  /* USER CODE END GPDMA1_Init 1 */
+  /* USER CODE BEGIN GPDMA1_Init 2 */
+
+  /* USER CODE END GPDMA1_Init 2 */
+
+}
+
+/**
   * @brief SPI1 Initialization Function
   * @param None
   * @retval None
@@ -207,17 +267,17 @@ static void MX_SPI1_Init(void)
   /* SPI1 parameter configuration*/
   hspi1.Instance = SPI1;
   hspi1.Init.Mode = SPI_MODE_MASTER;
-  hspi1.Init.Direction = SPI_DIRECTION_2LINES;
-  hspi1.Init.DataSize = SPI_DATASIZE_4BIT;
+  hspi1.Init.Direction = SPI_DIRECTION_2LINES_TXONLY;
+  hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
   hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
   hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
   hspi1.Init.NSS = SPI_NSS_SOFT;
-  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_2;
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_16;
   hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
   hspi1.Init.CRCPolynomial = 0x7;
-  hspi1.Init.NSSPMode = SPI_NSS_PULSE_ENABLE;
+  hspi1.Init.NSSPMode = SPI_NSS_PULSE_DISABLE;
   hspi1.Init.NSSPolarity = SPI_NSS_POLARITY_LOW;
   hspi1.Init.FifoThreshold = SPI_FIFO_THRESHOLD_01DATA;
   hspi1.Init.MasterSSIdleness = SPI_MASTER_SS_IDLENESS_00CYCLE;
@@ -406,6 +466,7 @@ static void MX_GPIO_Init(void)
 
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOC_CLK_ENABLE();
+  __HAL_RCC_GPIOH_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOF_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
@@ -416,7 +477,7 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(spi1_sd_cs_GPIO_Port, spi1_sd_cs_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(spi1_tft_cs_GPIO_Port, spi1_tft_cs_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(spi1_tft_cs_GPIO_Port, spi1_tft_cs_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(led_red_GPIO_Port, led_red_Pin, GPIO_PIN_RESET);
@@ -425,10 +486,10 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(led_grn_GPIO_Port, led_grn_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, led_blu_Pin|tft_dc_sel_out_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(led_blu_GPIO_Port, led_blu_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(tft_rst_GPIO_Port, tft_rst_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(GPIOB, tft_rst_Pin|tft_dc_sel_out_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pin : button_user_Pin */
   GPIO_InitStruct.Pin = button_user_Pin;
@@ -447,7 +508,7 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pin = spi1_tft_cs_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
   HAL_GPIO_Init(spi1_tft_cs_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : led_red_Pin */
@@ -464,12 +525,26 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(led_grn_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : led_blu_Pin tft_rst_Pin tft_dc_sel_out_Pin */
-  GPIO_InitStruct.Pin = led_blu_Pin|tft_rst_Pin|tft_dc_sel_out_Pin;
+  /*Configure GPIO pin : led_blu_Pin */
+  GPIO_InitStruct.Pin = led_blu_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+  HAL_GPIO_Init(led_blu_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : tft_rst_Pin */
+  GPIO_InitStruct.Pin = tft_rst_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(tft_rst_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : tft_dc_sel_out_Pin */
+  GPIO_InitStruct.Pin = tft_dc_sel_out_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+  HAL_GPIO_Init(tft_dc_sel_out_GPIO_Port, &GPIO_InitStruct);
 
 /* USER CODE BEGIN MX_GPIO_Init_2 */
 /* USER CODE END MX_GPIO_Init_2 */
@@ -477,7 +552,199 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 
+void lcd_color_transfer_ready_cb(SPI_HandleTypeDef *hspi)
+{
+  /* CS high */
+  HAL_GPIO_WritePin(spi1_tft_cs_GPIO_Port, spi1_tft_cs_Pin, GPIO_PIN_SET);
+  lcd_bus_busy = 0;
+  lv_display_flush_ready(lcd_disp);
+}
+
+/* Initialize LCD I/O bus, reset LCD */
+static int32_t lcd_io_init(void)
+{
+  /* Register SPI Tx Complete Callback */
+  HAL_SPI_RegisterCallback(&hspi1, HAL_SPI_TX_COMPLETE_CB_ID, lcd_color_transfer_ready_cb);
+
+  /* reset LCD */
+  HAL_GPIO_WritePin(tft_rst_GPIO_Port, tft_rst_Pin, GPIO_PIN_RESET);
+  HAL_Delay(100);
+  HAL_GPIO_WritePin(tft_rst_GPIO_Port, tft_rst_Pin, GPIO_PIN_SET);
+  HAL_Delay(100);
+
+  HAL_GPIO_WritePin(spi1_tft_cs_GPIO_Port, spi1_tft_cs_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(tft_dc_sel_out_GPIO_Port, tft_dc_sel_out_Pin, GPIO_PIN_SET);
+
+  return HAL_OK;
+}
+
+/* Platform-specific implementation of the LCD send command function. In general this should use polling transfer. */
+static void lcd_send_cmd(lv_display_t *disp, const uint8_t *cmd, size_t cmd_size, const uint8_t *param, size_t param_size)
+{
+  static uint32_t cmd_counter = 0;
+
+  LV_UNUSED(disp);
+  while (lcd_bus_busy);	/* wait until previous transfer is finished */
+  /* Set the SPI in 8-bit mode */
+  hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
+  HAL_SPI_Init(&hspi1);
+  /* DCX low (command) */
+  HAL_GPIO_WritePin(tft_dc_sel_out_GPIO_Port, tft_dc_sel_out_Pin, GPIO_PIN_RESET);
+  /* CS low */
+  HAL_GPIO_WritePin(spi1_tft_cs_GPIO_Port, spi1_tft_cs_Pin, GPIO_PIN_RESET);
+  /* send command */
+  if (HAL_SPI_Transmit(&hspi1, cmd, cmd_size, BUS_SPI1_POLL_TIMEOUT) == HAL_OK) {
+    /* DCX high (data) */
+    HAL_GPIO_WritePin(tft_dc_sel_out_GPIO_Port, tft_dc_sel_out_Pin, GPIO_PIN_SET);
+    /* for short data blocks we use polling transfer */
+    HAL_SPI_Transmit(&hspi1, (uint8_t *)param, (uint16_t)param_size, BUS_SPI1_POLL_TIMEOUT);
+    /* CS high */
+    HAL_GPIO_WritePin(spi1_tft_cs_GPIO_Port, spi1_tft_cs_Pin, GPIO_PIN_SET);
+  }
+
+  cmd_counter++;
+}
+
+/* Platform-specific implementation of the LCD send color function. For better performance this should use DMA transfer.
+  * In case of a DMA transfer a callback must be installed to notify LVGL about the end of the transfer.
+  */
+static void lcd_send_color(lv_display_t *disp, const uint8_t *cmd, size_t cmd_size, uint8_t *param, size_t param_size)
+{
+  static uint32_t cmd_counter = 0;
+  static uint32_t err_counter = 0;
+  LV_UNUSED(disp);
+  while (lcd_bus_busy);	/* wait until previous transfer is finished */
+  /* Set the SPI in 8-bit mode */
+  hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
+  HAL_SPI_Init(&hspi1);
+  /* DCX low (command) */
+  HAL_GPIO_WritePin(tft_dc_sel_out_GPIO_Port, tft_dc_sel_out_Pin, GPIO_PIN_RESET);
+  /* CS low */
+  HAL_GPIO_WritePin(spi1_tft_cs_GPIO_Port, spi1_tft_cs_Pin, GPIO_PIN_RESET);
+  /* send command */
+  if (HAL_SPI_Transmit(&hspi1, cmd, cmd_size, BUS_SPI1_POLL_TIMEOUT) == HAL_OK) {
+    /* DCX high (data) */
+    HAL_GPIO_WritePin(tft_dc_sel_out_GPIO_Port, tft_dc_sel_out_Pin, GPIO_PIN_SET);
+    /* for color data use DMA transfer */
+    /* Set the SPI in 16-bit mode to match endianness */
+    hspi1.Init.DataSize = SPI_DATASIZE_16BIT;
+    HAL_SPI_Init(&hspi1);
+    lcd_bus_busy = 1;
+    
+    hspi1.hdmatx->Init.SrcDataWidth = DMA_SRC_DATAWIDTH_HALFWORD;
+    HAL_DMA_Init(hspi1.hdmatx);
+
+    HAL_StatusTypeDef result = HAL_SPI_Transmit_IT(&hspi1, param, (uint16_t)param_size / 2);
+
+    // HAL_StatusTypeDef result = HAL_SPI_Transmit_DMA(&hspi1, param, (uint16_t)param_size / 2);
+    /* NOTE: CS will be reset in the transfer ready callback */
+    // if (result == HAL_OK) {
+    //   HAL_DMA_RegisterCallback(&handle_GPDMA1_Channel0, HAL_DMA_XFER_CPLT_CB_ID, DMA_TransferComplete);
+    //   HAL_DMA_RegisterCallback(&handle_GPDMA1_Channel0, HAL_DMA_XFER_ERROR_CB_ID, DMA_TransferError);
+    // }
+    if (result != HAL_OK)
+      err_counter++;
+  }
+  cmd_counter++;
+}
+
+static void DMA_TransferComplete(DMA_HandleTypeDef *han)
+{
+  lcd_color_transfer_ready_cb(&hspi1);
+}
+
+static void DMA_TransferError(DMA_HandleTypeDef *han)
+{
+  static uint32_t err_counter = 0;
+
+  err_counter++;
+  // lcd_bus_busy = 0;
+  // lv_display_flush_ready(lcd_disp);
+}
+
+static void LVGL_Init(void)
+{
+  /* Initialize LVGL */
+  lv_init();
+
+  /* Initialize LCD I/O */
+  if (lcd_io_init() != 0)
+    return;
+
+  /* Create the LVGL display object and the LCD display driver */
+  lcd_disp = lv_st7789_create(LCD_H_RES, LCD_V_RES, LV_LCD_FLAG_NONE, lcd_send_cmd, lcd_send_color);
+  lv_display_set_rotation(lcd_disp, LV_DISPLAY_ROTATION_0);
+
+  /* Allocate draw buffers on the heap. In this example we use two partial buffers of 1/10th size of the screen */
+  lv_color_t * buf1 = NULL;
+  lv_color_t * buf2 = NULL;
+
+  uint32_t buf_size = LCD_H_RES * LCD_V_RES / 10 * lv_color_format_get_size(lv_display_get_color_format(lcd_disp));
+
+  buf1 = lv_malloc(buf_size);
+  if(buf1 == NULL) {
+    LV_LOG_ERROR("display draw buffer malloc failed");
+    return;
+  }
+
+  buf2 = lv_malloc(buf_size);
+  if(buf2 == NULL) {
+    LV_LOG_ERROR("display buffer malloc failed");
+    lv_free(buf1);
+    return;
+  }
+  lv_display_set_buffers(lcd_disp, buf1, buf2, buf_size, LV_DISPLAY_RENDER_MODE_PARTIAL);
+
+  ui_init(lcd_disp);
+}
+
+static void LVGL_Task(void)
+{
+  /* The task running lv_timer_handler should have lower priority than that running `lv_tick_inc` */
+  lv_timer_handler();
+}
+
+void ui_init(lv_display_t *disp)
+{
+  lv_obj_t *obj;
+
+  /* set screen background to white */
+  lv_obj_t *scr = lv_screen_active();
+  lv_obj_set_style_bg_color(scr, lv_color_white(), 0);
+  lv_obj_set_style_bg_opa(scr, LV_OPA_100, 0);
+
+  /* create label */
+  obj = lv_label_create(scr);
+  lv_obj_set_align(obj, LV_ALIGN_CENTER);
+  lv_obj_set_height(obj, LV_SIZE_CONTENT);
+  lv_obj_set_width(obj, LV_SIZE_CONTENT);
+  lv_obj_set_style_text_font(obj, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_color(obj, lv_color_black(), 0);
+  lv_label_set_text(obj, "Hello World!");
+}
+
 /* USER CODE END 4 */
+
+/**
+  * @brief  Period elapsed callback in non blocking mode
+  * @note   This function is called  when TIM2 interrupt took place, inside
+  * HAL_TIM_IRQHandler(). It makes a direct call to HAL_IncTick() to increment
+  * a global variable "uwTick" used as application time base.
+  * @param  htim : TIM handle
+  * @retval None
+  */
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+  /* USER CODE BEGIN Callback 0 */
+
+  /* USER CODE END Callback 0 */
+  if (htim->Instance == TIM2) {
+    HAL_IncTick();
+  }
+  /* USER CODE BEGIN Callback 1 */
+
+  /* USER CODE END Callback 1 */
+}
 
 /**
   * @brief  This function is executed in case of error occurrence.
