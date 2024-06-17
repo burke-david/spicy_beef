@@ -85,7 +85,7 @@ endfunction()
 # Collect include directories
 collect_include_dirs(${PROJ_PATH}/Core CORE_INCLUDE_DIRS)
 collect_include_dirs(${PROJ_PATH}/Drivers DRIVERS_INCLUDE_DIRS)
-collect_include_dirs(${PROJ_PATH}/Middlewares MIDDLEWARES_INCLUDE_DIRS)
+collect_include_dirs(${PROJ_PATH}/Middlewares/ST MIDDLEWARES_INCLUDE_DIRS)
 collect_include_dirs(${PROJ_PATH}/FileX FILEX_INCLUDE_DIRS)
 
 #
@@ -96,6 +96,18 @@ set(include_path_DIRS
     ${DRIVERS_INCLUDE_DIRS}
     ${MIDDLEWARES_INCLUDE_DIRS}
     ${FILEX_INCLUDE_DIRS}
+    ${PROJ_PATH}/Middlewares/Third_Party
+    ${PROJ_PATH}/Middlewares/Third_Party/lvgl
+)
+
+# Add some include directories so that intellisense will detect them
+include_directories(
+    ${CORE_INCLUDE_DIRS}
+    ${DRIVERS_INCLUDE_DIRS}
+    ${MIDDLEWARES_INCLUDE_DIRS}
+    ${FILEX_INCLUDE_DIRS}
+    ${PROJ_PATH}/Middlewares/Third_Party
+    ${PROJ_PATH}/Middlewares/Third_Party/lvgl
 )
 
 # Print all include directories (for debugging)
