@@ -38,6 +38,10 @@
 #define LCD_H_RES	240
 #define LCD_V_RES	240
 #define BUS_SPI1_POLL_TIMEOUT 0x1000U
+
+LV_IMG_DECLARE( pacman_open_240x240 );
+LV_IMG_DECLARE( pacman_closed_240x240 ); 
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -74,9 +78,12 @@ static void MX_SPI1_Init(void);
 static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
 
-void ui_init(lv_display_t *disp);
+static void ui_init(lv_display_t *disp);
 static void LVGL_Init(void);
 static void LVGL_Task(void);
+
+static void set_screen_color(lv_color_t color);
+static void set_pacman_img(bool open);
 
 static void DMA_TransferComplete(DMA_HandleTypeDef *han);
 static void DMA_TransferError(DMA_HandleTypeDef *han);
@@ -97,8 +104,12 @@ int main(void)
 
   /* USER CODE BEGIN 1 */
 
+  bool task_complete_1000ms = false;
   bool task_complete_500ms = false;
+  bool task_complete_250ms = false;
   bool task_complete_10ms = false;
+  
+  bool pacman_open = true;
 
   /* USER CODE END 1 */
 
@@ -150,17 +161,43 @@ int main(void)
       task_complete_10ms = false;
     }
 
+    /* 250ms TASKS */
+    if ((HAL_GetTick() % 250 == 0) && !task_complete_250ms){
+ 
+      task_complete_250ms = true;
+    }
+    else if (HAL_GetTick() % 250 != 0){
+      task_complete_250ms = false;
+    }
+
     /* 500ms TASKS */
     if ((HAL_GetTick() % 500 == 0) && !task_complete_500ms){
       // Toggle the red led
       HAL_GPIO_TogglePin(led_grn_GPIO_Port, led_grn_Pin);
       HAL_GPIO_TogglePin(led_blu_GPIO_Port, led_blu_Pin);
       HAL_GPIO_TogglePin(led_red_GPIO_Port, led_red_Pin);
+
+      // Toggle the pacman image
+      // set_pacman_img(pacman_open);
+      // pacman_open = !pacman_open;
+
       task_complete_500ms = true;
     }
     else if (HAL_GetTick() % 500 != 0){
       task_complete_500ms = false;
     }
+
+    /* 1000ms TASKS */
+    if ((HAL_GetTick() % 1000 == 0) && !task_complete_1000ms){
+      
+      task_complete_1000ms = true;
+    }
+    else if (HAL_GetTick() % 1000 != 0){
+      task_complete_1000ms = false;
+    }
+
+
+
   }
   /* USER CODE END 3 */
 }
@@ -675,6 +712,8 @@ static void LVGL_Init(void)
   lcd_disp = lv_st7789_create(LCD_H_RES, LCD_V_RES, LV_LCD_FLAG_NONE, lcd_send_cmd, lcd_send_color);
   lv_display_set_rotation(lcd_disp, LV_DISPLAY_ROTATION_0);
 
+  lv_st7789_set_invert(lcd_disp, true);
+
   /* Allocate draw buffers on the heap. In this example we use two partial buffers of 1/10th size of the screen */
   lv_color_t * buf1 = NULL;
   lv_color_t * buf2 = NULL;
@@ -696,6 +735,7 @@ static void LVGL_Init(void)
   lv_display_set_buffers(lcd_disp, buf1, buf2, buf_size, LV_DISPLAY_RENDER_MODE_PARTIAL);
 
   ui_init(lcd_disp);
+  // set_screen_color(lv_color_make(0xff, 0xff, 0x00));
 }
 
 static void LVGL_Task(void)
@@ -704,23 +744,63 @@ static void LVGL_Task(void)
   lv_timer_handler();
 }
 
-void ui_init(lv_display_t *disp)
+static void ui_init(lv_display_t *disp)
 {
   lv_obj_t *obj;
 
   /* set screen background to white */
   lv_obj_t *scr = lv_screen_active();
-  lv_obj_set_style_bg_color(scr, lv_color_white(), 0);
+  lv_obj_set_style_bg_color(scr, lv_color_black(), 0);
   lv_obj_set_style_bg_opa(scr, LV_OPA_100, 0);
 
   /* create label */
-  obj = lv_label_create(scr);
-  lv_obj_set_align(obj, LV_ALIGN_CENTER);
-  lv_obj_set_height(obj, LV_SIZE_CONTENT);
-  lv_obj_set_width(obj, LV_SIZE_CONTENT);
-  lv_obj_set_style_text_font(obj, &lv_font_montserrat_14, 0);
-  lv_obj_set_style_text_color(obj, lv_color_black(), 0);
-  lv_label_set_text(obj, "Hello World!");
+  // obj = lv_label_create(scr);
+  // lv_obj_set_align(obj, LV_ALIGN_CENTER);
+  // lv_obj_set_height(obj, LV_SIZE_CONTENT);
+  // lv_obj_set_width(obj, LV_SIZE_CONTENT);
+  // lv_obj_set_style_text_font(obj, &lv_font_montserrat_14, 0);
+  // lv_obj_set_style_text_color(obj, lv_color_black(), 0);
+  // lv_label_set_text(obj, "Hello World!");
+
+  /* 
+    Create an image from the img directory and add it to the screen. The image is contained in the file pacman_open_240x176.c
+    and is defined by the following struct:
+
+    const lv_image_dsc_t pacman_open_240x176 = {
+      .header.cf = LV_COLOR_FORMAT_RGB565,
+      .header.magic = LV_IMAGE_HEADER_MAGIC,
+      .header.w = 240,
+      .header.h = 176,
+      .data_size = 42240 * 2,
+      .data = pacman_open_240x176_map,
+    };
+    
+  */
+  obj = lv_img_create(scr);
+  lv_img_set_src(obj, &pacman_open_240x240);
+  lv_obj_align(obj, LV_ALIGN_CENTER, 0, 0);
+
+
+}
+
+static void set_pacman_img(bool open)
+{
+  lv_obj_t *scr = lv_screen_active();
+  lv_obj_t *obj = lv_img_create(scr);
+  if (open)
+    lv_img_set_src(obj, &pacman_open_240x240);
+  else
+    lv_img_set_src(obj, &pacman_closed_240x240);
+  lv_obj_align(obj, LV_ALIGN_CENTER, 0, 0);
+}
+
+static void set_screen_color(lv_color_t color)
+{
+    lv_obj_t * screen_obj = lv_obj_create(lv_scr_act()); // Create an object on the active screen
+    lv_obj_set_size(screen_obj, LV_HOR_RES, LV_VER_RES); // Set the object size to cover the entire screen
+    lv_obj_align(screen_obj, LV_ALIGN_CENTER, 0, 0); // Align the object to the center of the screen
+    lv_obj_set_style_bg_color(screen_obj, color, 0); // Set the background color of the object
+    lv_obj_set_style_bg_opa(screen_obj, LV_OPA_COVER, 0); // Ensure the background is fully opaque
 }
 
 /* USER CODE END 4 */
