@@ -55,6 +55,11 @@ file(GLOB_RECURSE filex_SRCS
     ${PROJ_PATH}/FileX/*.c
 )
 
+# Add all source files in the img directory
+file(GLOB_RECURSE img_SRCS
+    ${PROJ_PATH}/img/*.c
+)
+
 #
 # List of source files to compile
 #
@@ -63,6 +68,7 @@ set(sources_SRCS
     ${drivers_SRCS}
     ${middlewares_SRCS}
     ${filex_SRCS}
+    ${img_SRCS}
 )
 
 # print all the source files
